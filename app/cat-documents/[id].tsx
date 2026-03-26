@@ -314,7 +314,8 @@ export default function CatDocumentsScreen() {
 
     try {
       const fileName = `${Date.now()}-${selectedFile.name}`;
-      const filePath = fileName;
+      const docType = selectedDocType.replace(/\s+/g, "_").toLowerCase();
+      const filePath = `documents/${docType}/${fileName}`;
 
       console.log("🚀 Upload started:", filePath);
 
