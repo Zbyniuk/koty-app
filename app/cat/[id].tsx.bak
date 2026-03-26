@@ -1,0 +1,138 @@
+import React, { useEffect, useState } from "react";
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { supabase } from "../../lib/supabase";
+
+export default function CatScreen() {
+  const { id } = useLocalSearchParams();
+  const [cat, setCat] = useState<any>(null);
+
+  useEffect(() => {
+    loadCat();
+  }, []);
+
+  const loadCat = async () => {
+    const { data } = await supabase.from("cats").select("*").eq("id", id).single();
+    setCat(data);
+  };
+
+  if (!cat) return <Text>Ładowanie...</Text>;
+
+  return (
+    <ScrollView style={styles.container}>
+      
+      {/* TOP */}
+      <View style={styles.topRow}>
+        {cat.photo_url ? (
+          <Image source={{ uri: cat.photo_url }} style={styles.photo} />
+        ) : (
+          <View style={[styles.photo, styles.photoPlaceholder]}>
+            <Text>Brak zdjęcia</Text>
+          </View>
+        )}
+
+        <View style={styles.right}>
+          {cat.title_prefix && <Text style={styles.title}>{cat.title_prefix}</Text>}
+          <Text style={styles.name}>{cat.call_name || cat.name}</Text>
+          {cat.cattery_name && <Text style={styles.cattery}>{cat.cattery_name}</Text>}
+          {cat.title_suffix && <Text style={styles.suffix}>{cat.title_suffix}</Text>}
+        </View>
+      </View>
+
+      {/* KAFELKI */}
+      <View style={styles.grid}>
+
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#6d597a" }]}
+          onPress={() => router.push(`/cat-details/${id}`)}
+        >
+          <Text style={styles.tileText}>Szczegóły</Text>
+        </TouchableOpacity>
+
+        {cat.status === "breeding" && (
+          <TouchableOpacity
+            style={[styles.tile, { backgroundColor: "#b56576" }]}
+            onPress={() => router.push(`/litter-list/${id}`)}
+          >
+            <Text style={styles.tileText}>Mioty</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#355070" }]}
+          onPress={() => router.push(`/cat-documents/${id}`)}
+        >
+          <Text style={styles.tileText}>Dokumenty</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#6a994e" }]}
+          onPress={() => router.push(`/cat-health/${id}`)}
+        >
+          <Text style={styles.tileText}>Zdrowie</Text>
+        </TouchableOpacity>
+
+      </View>
+
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#f4efe9",
+  },
+  topRow: {
+    flexDirection: "row",
+    marginBottom: 20,
+  },
+  photo: {
+    width: 110,
+    height: 110,
+    borderRadius: 20,
+    marginRight: 12,
+    backgroundColor: "#ddd",
+  },
+  photoPlaceholder: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  right: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 14,
+    color: "#777",
+    fontWeight: "bold",
+  },
+  name: {
+    fontSize: 26,
+    fontWeight: "bold",
+  },
+  cattery: {
+    fontSize: 16,
+    color: "#666",
+  },
+  suffix: {
+    fontSize: 14,
+    color: "#777",
+  },
+
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  tile: {
+    width: "48%",
+    padding: 20,
+    borderRadius: 16,
+  },
+  tileText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+});

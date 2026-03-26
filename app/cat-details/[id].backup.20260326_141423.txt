@@ -1,0 +1,117 @@
+
+import React, { useEffect, useState } from "react";
+import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { supabase } from "../../lib/supabase";
+
+export default function CatDetails() {
+  const { id } = useLocalSearchParams();
+
+  const [cat, setCat] = useState(null);
+  const [docs, setDocs] = useState([]);
+  const [photos, setPhotos] = useState([]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    const { data: c } = await supabase.from("cats").select("*").eq("id", id).single();
+    const { data: d } = await supabase.from("cat_documents").select("*").eq("cat_id", id);
+    const { data: p } = await supabase.from("cat_photos").select("*").eq("cat_id", id);
+
+    setCat(c);
+    setDocs(d || []);
+    setPhotos(p || []);
+  };
+
+  if (!cat) return <Text>Ładowanie...</Text>;
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.header}>Dane kota</Text>
+      <View style={styles.card}>
+        <Text style={styles.row}>Płeć: {cat.sex || "—"}</Text>
+        <Text style={styles.row}>Data ur.: {cat.birth_date || "—"}</Text>
+        <Text style={styles.row}>Status: {cat.status || "—"}</Text>
+        <Text style={styles.row}>Rodowód: {cat.pedigree_number || "—"}</Text>
+      </View>
+
+      <Text style={styles.header}>Dokumenty</Text>
+      <View style={styles.card}>
+        {docs.length === 0 ? (
+          <Text style={styles.empty}>Brak dokumentów</Text>
+        ) : (
+          docs.map((d) => (
+            <View key={d.id} style={styles.itemBox}>
+              <Text style={styles.itemTitle}>{d.document_type || "Dokument"}</Text>
+              <Text style={styles.itemText}>Numer: {d.document_number || "—"}</Text>
+              <Text style={styles.itemText}>Data: {d.issue_date || "—"}</Text>
+              <Text style={styles.itemText}>Uwagi: {d.notes || "—"}</Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      <Text style={styles.header}>Zdjęcia</Text>
+      <View style={styles.card}>
+        {photos.length === 0 ? (
+          <Text style={styles.empty}>Brak zdjęć</Text>
+        ) : (
+          photos.map((p) => (
+            <View key={p.id} style={styles.itemBox}>
+              <Text style={styles.itemTitle}>Zdjęcie</Text>
+              <Text style={styles.itemText}>{p.description || "Bez opisu"}</Text>
+            </View>
+          ))
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#f4efe9",
+  },
+  header: {
+    fontSize: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    fontWeight: "bold",
+    color: "#222",
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 14,
+  },
+  row: {
+    fontSize: 15,
+    marginBottom: 8,
+    color: "#333",
+  },
+  empty: {
+    fontSize: 15,
+    color: "#777",
+  },
+  itemBox: {
+    backgroundColor: "#f8f5f1",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 4,
+    color: "#222",
+  },
+  itemText: {
+    fontSize: 14,
+    color: "#555",
+    marginBottom: 2,
+  },
+});

@@ -1,0 +1,198 @@
+import { useEffect, useState } from "react";
+import { ScrollView, Text, View, Pressable } from "react-native";
+import { Stack, router, useLocalSearchParams } from "expo-router";
+import { supabase } from "../../../lib/supabase";
+
+type LitterRow = {
+  id: string;
+  birth_date: string | null;
+  litter_letter: string | null;
+  mother_id: string | null;
+  father_id: string | null;
+  mother?: { name: string | null } | null;
+  father?: { name: string | null } | null;
+};
+
+type KittenRow = {
+  id: string;
+  name: string | null;
+  sex: string | null;
+  birth_date: string | null;
+  pedigree_number: string | null;
+  kitten_number: number | null;
+  temporary_label: string | null;
+};
+
+function formatDate(date: string | null) {
+  if (!date) return "brak";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return date;
+  return d.toLocaleDateString("pl-PL");
+}
+
+export default function LitterScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+
+  const [litter, setLitter] = useState<LitterRow | null>(null);
+  const [kittens, setKittens] = useState<KittenRow[]>([]);
+  const [status, setStatus] = useState("Ładowanie...");
+
+  useEffect(() => {
+    if (!id) return;
+    loadData(String(id));
+  }, [id]);
+
+  async function loadData(litterId: string) {
+    setStatus("Ładowanie...");
+
+    const { data: litterData, error: litterError } = await supabase
+      .from("litters")
+      .select(`
+        id,
+        birth_date,
+        litter_letter,
+        mother_id,
+        father_id,
+        mother:mother_id(name),
+        father:father_id(name)
+      `)
+      .eq("id", litterId)
+      .maybeSingle();
+
+    if (litterError || !litterData) {
+      console.log("LITTER ERROR:", litterError);
+      setStatus("Nie udało się odczytać miotu");
+      return;
+    }
+
+    setLitter(litterData as LitterRow);
+
+    const { data: kittensData, error: kittensError } = await supabase
+      .from("cats")
+      .select("id, name, sex, birth_date, pedigree_number, kitten_number, temporary_label")
+      .eq("litter_id", litterId)
+      .order("kitten_number", { ascending: true });
+
+    if (kittensError) {
+      console.log("KITTENS ERROR:", kittensError);
+      setStatus("Błąd odczytu kociąt");
+      return;
+    }
+
+    setKittens((kittensData as KittenRow[]) ?? []);
+    setStatus("Załadowano");
+  }
+
+  return (
+    <>
+      <Stack.Screen
+        options={{
+          title: litter?.litter_letter
+            ? `Miot ${litter.litter_letter}`
+            : "Miot",
+        }}
+      />
+
+      <ScrollView
+        style={{ flex: 1, backgroundColor: "#faf7f2" }}
+        contentContainerStyle={{ padding: 20 }}
+      >
+        <View
+          style={{
+            backgroundColor: "#ffffff",
+            borderRadius: 20,
+            padding: 16,
+            marginBottom: 20,
+          }}
+        >
+          <Text style={{ color: "#8a817c", fontSize: 14 }}>MIOT</Text>
+
+          <Text
+            style={{
+              fontSize: 24,
+              fontWeight: "600",
+              color: "#3f3a37",
+              marginTop: 6,
+            }}
+          >
+            {litter?.litter_letter
+              ? `Miot "${litter.litter_letter}"`
+              : `Miot z ${formatDate(litter?.birth_date ?? null)}`}
+          </Text>
+
+          <Text style={{ marginTop: 8, color: "#8a817c" }}>
+            ur.: {formatDate(litter?.birth_date ?? null)}
+          </Text>
+
+          <Text style={{ marginTop: 2, color: "#8a817c" }}>
+            matka: {litter?.mother?.name ?? "—"}
+          </Text>
+
+          <Text style={{ marginTop: 2, color: "#8a817c" }}>
+            ojciec: {litter?.father?.name ?? "—"}
+          </Text>
+
+          <Text style={{ marginTop: 8, color: "#6b5e57" }}>{status}</Text>
+        </View>
+
+        <Pressable
+          onPress={() => router.push(`/litter/${id}/weights`)}
+          style={{
+            backgroundColor: "#ffe8d6",
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 20,
+          }}
+        >
+          <Text style={{ fontWeight: "600", fontSize: 16 }}>Wagi</Text>
+          <Text style={{ fontSize: 12, marginTop: 6, color: "#6b5e57" }}>
+            Otwórz siatkę ważenia tego miotu
+          </Text>
+        </Pressable>
+
+        <Text style={{ marginBottom: 10, color: "#8a817c" }}>KOCIĘTA</Text>
+
+        {kittens.length === 0 ? (
+          <View
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 16,
+              padding: 16,
+            }}
+          >
+            <Text style={{ color: "#8a817c" }}>Brak kociąt w tym miocie.</Text>
+          </View>
+        ) : (
+          kittens.map((kitten) => (
+            <Pressable
+              key={kitten.id}
+              onPress={() => router.push(`/cat/${kitten.id}`)}
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 10,
+              }}
+            >
+              <Text style={{ fontWeight: "600", fontSize: 16 }}>
+                {kitten.name ?? kitten.temporary_label ?? "Bez nazwy"}
+              </Text>
+
+              <Text style={{ color: "#8a817c", marginTop: 4 }}>
+                płeć: {kitten.sex === "F" ? "kotka" : kitten.sex === "M" ? "kocur" : "—"}
+              </Text>
+
+              <Text style={{ color: "#8a817c", marginTop: 2 }}>
+                ur.: {formatDate(kitten.birth_date)}
+              </Text>
+
+              <Text style={{ color: "#8a817c", marginTop: 2 }}>
+                nr w miocie: {kitten.kitten_number ?? "—"}
+              </Text>
+            </Pressable>
+          ))
+        )}
+      </ScrollView>
+    </>
+  );
+}

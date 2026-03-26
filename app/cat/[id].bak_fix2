@@ -1,0 +1,244 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { supabase } from "../../lib/supabase";
+
+function monthsBetween(dateString?: string | null) {
+  if (!dateString) return null;
+  const birth = new Date(dateString);
+  if (Number.isNaN(birth.getTime())) return null;
+
+  const now = new Date();
+  let months = (now.getFullYear() - birth.getFullYear()) * 12;
+  months += now.getMonth() - birth.getMonth();
+
+  if (now.getDate() < birth.getDate()) {
+    months -= 1;
+  }
+
+  return months;
+}
+
+export default function CatScreen() {
+  const { id } = useLocalSearchParams();
+
+  const [cat, setCat] = useState<any>(null);
+  const [motherLitterCount, setMotherLitterCount] = useState(0);
+  const [fatherLitterCount, setFatherLitterCount] = useState(0);
+
+  useEffect(() => {
+    loadCat();
+  }, []);
+
+  const loadCat = async () => {
+    const { data } = await supabase.from("cats").select("*").eq("id", id).single();
+    setCat(data || null);
+
+    const { count: motherCount } = await supabase
+      .from("litters")
+      .select("*", { count: "exact", head: true })
+      .eq("mother_id", id);
+
+    const { count: fatherCount } = await supabase
+      .from("litters")
+      .select("*", { count: "exact", head: true })
+      .eq("father_id", id);
+
+    setMotherLitterCount(motherCount || 0);
+    setFatherLitterCount(fatherCount || 0);
+  };
+
+  const displayName = useMemo(() => {
+    if (!cat) return "Bez nazwy";
+
+    const parts = [
+      cat.call_name || "",
+      cat.cattery_name || "",
+    ].map((x: string) => (x || "").trim()).filter(Boolean);
+
+    if (parts.length) return parts.join(" ");
+    return cat.name || "Bez nazwy";
+  }, [cat]);
+
+  const titleLine = useMemo(() => {
+    if (!cat) return "";
+    return [cat.title_prefix || "", cat.title_suffix || ""]
+      .map((x: string) => (x || "").trim())
+      .filter(Boolean)
+      .join(" ");
+  }, [cat]);
+
+  const showBreedingTile = useMemo(() => {
+    if (!cat) return false;
+
+    const ageMonths = monthsBetween(cat.birth_date);
+    if (ageMonths !== null && ageMonths < 11) return false;
+    return true;
+  }, [cat]);
+
+  const breedingTileConfig = useMemo(() => {
+    if (!cat || !showBreedingTile) return null;
+
+    const isFemale = cat.sex === "F";
+    const isMale = cat.sex === "M";
+    const status = (cat.status || "").toLowerCase();
+
+    if (isFemale) {
+      const shouldShow = status === "breeding" || motherLitterCount > 0;
+      if (!shouldShow) return null;
+
+      return {
+        label: "Mioty",
+        route: `/litter-list/${id}`,
+        color: "#b56576",
+      };
+    }
+
+    if (isMale) {
+      const shouldShow = status === "breeding" || fatherLitterCount > 0;
+      if (!shouldShow) return null;
+
+      return {
+        label: "Krycia",
+        route: `/litter-list/${id}`,
+        color: "#b56576",
+      };
+    }
+
+    return null;
+  }, [cat, showBreedingTile, motherLitterCount, fatherLitterCount, id]);
+
+  if (!cat) {
+    return (
+      <View style={styles.loadingWrap}>
+        <Text>Ładowanie...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.topRow}>
+        {cat.photo_url ? (
+          <Image source={{ uri: cat.photo_url }} style={styles.photo} />
+        ) : (
+          <View style={[styles.photo, styles.photoPlaceholder]}>
+            <Text style={styles.photoPlaceholderText}>Brak zdjęcia</Text>
+          </View>
+        )}
+
+        <View style={styles.right}>
+          {titleLine ? <Text style={styles.title}>{titleLine}</Text> : null}
+
+          <Text
+            style={styles.nameSingleLine}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {displayName}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.grid}>
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#6d597a" }]}
+          onPress={() => router.push(`/cat-details/${id}`)}
+        >
+          <Text style={styles.tileText}>Szczegóły</Text>
+        </TouchableOpacity>
+
+        {breedingTileConfig ? (
+          <TouchableOpacity
+            style={[styles.tile, { backgroundColor: breedingTileConfig.color }]}
+            onPress={() => router.push(breedingTileConfig.route)}
+          >
+            <Text style={styles.tileText}>{breedingTileConfig.label}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#355070" }]}
+          onPress={() => router.push(`/cat-documents/${id}`)}
+        >
+          <Text style={styles.tileText}>Dokumenty</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tile, { backgroundColor: "#6a994e" }]}
+          onPress={() => router.push(`/cat-health/${id}`)}
+        >
+          <Text style={styles.tileText}>Zdrowie</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#f4efe9",
+  },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4efe9",
+  },
+  topRow: {
+    flexDirection: "row",
+    marginBottom: 20,
+    alignItems: "flex-start",
+  },
+  photo: {
+    width: 110,
+    height: 110,
+    borderRadius: 20,
+    marginRight: 12,
+    backgroundColor: "#ddd",
+  },
+  photoPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoPlaceholderText: {
+    color: "#666",
+    fontSize: 13,
+  },
+  right: {
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 110,
+    minWidth: 0,
+  },
+  title: {
+    fontSize: 14,
+    color: "#777",
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  nameSingleLine: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#222",
+    lineHeight: 22,
+    flexShrink: 1,
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  tile: {
+    width: "48%",
+    padding: 20,
+    borderRadius: 16,
+  },
+  tileText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+});

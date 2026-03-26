@@ -1,0 +1,160 @@
+import React, { useEffect, useState } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { supabase } from "../../../lib/supabase";
+
+export default function LitterScreen() {
+  const { id } = useLocalSearchParams();
+
+  const [litter, setLitter] = useState<any>(null);
+  const [kittens, setKittens] = useState<any[]>([]);
+  const [weights, setWeights] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+
+    const { data: litterData } = await supabase
+      .from("litters")
+      .select(`
+        *,
+        mother:mother_id(*),
+        father:father_id(*)
+      `)
+      .eq("id", id)
+      .single();
+
+    const { data: kittensData } = await supabase
+      .from("cats")
+      .select("*")
+      .eq("litter_id", id);
+
+    const kittenIds = (kittensData || []).map(k => k.id);
+
+    const { data: weightsData } = await supabase
+      .from("weights")
+      .select("*")
+      .in("cat_id", kittenIds);
+
+    const weightMap = {};
+
+    (weightsData || []).forEach(w => {
+      if (!weightMap[w.cat_id]) {
+        weightMap[w.cat_id] = w.weight || w.weight_g || w.birth_weight || null;
+      }
+    });
+
+    setLitter(litterData);
+    setKittens(kittensData || []);
+    setWeights(weightMap);
+    setLoading(false);
+  };
+
+  const getLetter = () => {
+    const first = kittens.find(k => k.name || k.call_name);
+    if (!first) return "";
+    const name = first.call_name || first.name;
+    return name.charAt(0).toUpperCase();
+  };
+
+  const getFullName = (cat) => {
+    if (!cat) return "—";
+    return [
+      cat.title_prefix,
+      cat.call_name,
+      cat.cattery_name,
+      cat.title_suffix
+    ].filter(Boolean).join(" ");
+  };
+
+  if (loading) {
+    return <Text>Ładowanie...</Text>;
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.headerBox}>
+        <Text style={styles.title}>MIOT {getLetter()}</Text>
+        <Text style={styles.date}>{litter.birth_date}</Text>
+        <Text style={styles.parent}>matka: {getFullName(litter.mother)}</Text>
+        <Text style={styles.parent}>ojciec: {getFullName(litter.father)}</Text>
+      </View>
+
+      {kittens.map(k => (
+        <TouchableOpacity
+          key={k.id}
+          style={styles.card}
+          onPress={() => router.push(`/cat/${k.id}`)}
+        >
+          <Text style={styles.sex}>{k.sex === "F" ? "kotka" : "kocurek"}</Text>
+
+          <View style={styles.row}>
+            <Text style={styles.name}>
+              {getFullName(k)}
+            </Text>
+
+            <Text style={styles.weight}>
+              waga: {weights[k.id] || "—"} g
+            </Text>
+          </View>
+
+          <Text style={styles.meta}>
+            nr w miocie: {k.kitten_number || "—"}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f4efe9",
+    padding: 16,
+  },
+  headerBox: {
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: "bold",
+  },
+  date: {
+    fontSize: 24,
+    marginBottom: 10,
+  },
+  parent: {
+    fontSize: 20,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  sex: {
+    fontSize: 13,
+    color: "#777",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  name: {
+    fontSize: 22,
+    fontWeight: "bold",
+    flex: 1,
+  },
+  weight: {
+    fontSize: 14,
+  },
+  meta: {
+    fontSize: 14,
+    color: "#666",
+  },
+});

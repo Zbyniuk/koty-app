@@ -1,0 +1,3 @@
+cd C:\Users\zbign\koty-app
+
+npx expo start -c

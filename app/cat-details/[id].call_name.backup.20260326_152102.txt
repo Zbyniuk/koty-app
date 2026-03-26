@@ -1,0 +1,451 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { supabase } from "@/lib/supabase";
+
+type CatRow = {
+  id: string;
+  name: string | null;
+  call_name: string | null;
+  sex: string | null;
+  birth_date: string | null;
+  pedigree_number: string | null;
+  status: string | null;
+  is_external: boolean | null;
+  reproductive_status: string | null;
+  fpl_id: number | null;
+  fpl_pedigree_url: string | null;
+};
+
+type PlacementRow = {
+  cat_id: string;
+  current_placement_status: string | null;
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "brak danych";
+  const parts = value.split("-");
+  if (parts.length !== 3) return value;
+  return `${parts[2]}.${parts[1]}.${parts[0]}`;
+}
+
+function monthsBetween(dateString?: string | null) {
+  if (!dateString) return null;
+  const birth = new Date(dateString);
+  if (Number.isNaN(birth.getTime())) return null;
+
+  const now = new Date();
+  let months = (now.getFullYear() - birth.getFullYear()) * 12;
+  months += now.getMonth() - birth.getMonth();
+
+  if (now.getDate() < birth.getDate()) {
+    months -= 1;
+  }
+
+  return months;
+}
+
+function formatBiologicalStatus(value: string | null) {
+  if (!value) return "brak danych";
+  const v = value.toLowerCase();
+
+  if (v === "intact") return "niekastrowany";
+  if (v === "neutered") return "kastrowany";
+
+  return value;
+}
+
+function formatBreedingStatus(value: string | null) {
+  if (!value) return "brak danych";
+  const v = value.toLowerCase();
+
+  if (v === "breeding") return "hodowlany";
+  if (v === "non-breeding") return "niehodowlany";
+  if (v === "observation") return "obserwacja";
+  if (v === "retired") return "wycofany z hodowli";
+
+  return value;
+}
+
+function formatBusinessStatus(value: string | null, isExternal: boolean | null) {
+  if (isExternal) return "poza hodowlą";
+  if (!value) return "brak danych";
+
+  const v = value.toLowerCase();
+
+  if (v === "stays_in_cattery") return "w hodowli";
+  if (v === "sold") return "sprzedany";
+  if (v === "reserved") return "zarezerwowany";
+  if (v === "observation") return "obserwacja";
+  if (v === "external") return "poza hodowlą";
+
+  return value;
+}
+
+function getBadgeStyle(value: string) {
+  const v = value.toLowerCase();
+
+  if (["niekastrowany", "hodowlany", "w hodowli"].includes(v)) {
+    return { bg: "#dff3e4", text: "#245c36" };
+  }
+
+  if (["kastrowany", "niehodowlany", "sprzedany"].includes(v)) {
+    return { bg: "#ececec", text: "#444444" };
+  }
+
+  if (["obserwacja", "zarezerwowany"].includes(v)) {
+    return { bg: "#fff1d6", text: "#8a5a00" };
+  }
+
+  if (["wycofany z hodowli", "poza hodowlą"].includes(v)) {
+    return { bg: "#ece7f7", text: "#5d4a84" };
+  }
+
+  return { bg: "#f1ece3", text: "#5f584d" };
+}
+
+function StatusBadge({ value }: { value: string }) {
+  const colors = getBadgeStyle(value);
+
+  return (
+    <View style={[styles.badge, { backgroundColor: colors.bg }]}>
+      <Text style={[styles.badgeText, { color: colors.text }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+export default function CatDetailsScreen() {
+  const { id } = useLocalSearchParams();
+
+  const [cat, setCat] = useState<CatRow | null>(null);
+  const [placement, setPlacement] = useState<PlacementRow | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadCat();
+  }, []);
+
+  const loadCat = async () => {
+    setLoading(true);
+
+    const [catRes, placementRes] = await Promise.all([
+      supabase
+        .from("cats")
+        .select("id, name, call_name, sex, birth_date, pedigree_number, status, is_external, reproductive_status, fpl_id, fpl_pedigree_url")
+        .eq("id", id)
+        .single(),
+
+      supabase
+        .from("v_cats_current_placement")
+        .select("cat_id, current_placement_status")
+        .eq("cat_id", id)
+        .maybeSingle(),
+    ]);
+
+    if (catRes.error) {
+      console.error("Cat details load error:", catRes.error);
+      setCat(null);
+      setPlacement(null);
+      setLoading(false);
+      return;
+    }
+
+    setCat((catRes.data as CatRow) || null);
+    setPlacement((placementRes.data as PlacementRow) || null);
+    setLoading(false);
+  };
+
+  const sexLabel = useMemo(() => {
+    if (!cat) return { symbol: "", text: "brak danych" };
+
+    if (cat.sex === "F") {
+      return { symbol: "♀", text: "kotka" };
+    }
+
+    if (cat.sex === "M") {
+      const ageMonths = monthsBetween(cat.birth_date);
+      if (ageMonths !== null && ageMonths < 11) {
+        return { symbol: "♂", text: "kocurek" };
+      }
+      return { symbol: "♂", text: "kocur" };
+    }
+
+    return { symbol: "", text: "brak danych" };
+  }, [cat]);
+
+  const biologicalStatus = useMemo(
+    () => formatBiologicalStatus(cat?.reproductive_status ?? null),
+    [cat]
+  );
+
+  const breedingStatus = useMemo(
+    () => formatBreedingStatus(cat?.status ?? null),
+    [cat]
+  );
+
+  const businessStatus = useMemo(
+    () => formatBusinessStatus(placement?.current_placement_status ?? null, cat?.is_external ?? null),
+    [placement, cat]
+  );
+
+  const openPedigree = async () => {
+    if (!cat?.fpl_pedigree_url) return;
+
+    const supported = await Linking.canOpenURL(cat.fpl_pedigree_url);
+    if (supported) {
+      await Linking.openURL(cat.fpl_pedigree_url);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingWrap}>
+        <Text style={styles.loadingText}>Ładowanie szczegółów…</Text>
+      </View>
+    );
+  }
+
+  if (!cat) {
+    return (
+      <View style={styles.loadingWrap}>
+        <Text style={styles.loadingText}>Nie udało się wczytać danych kota.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.eyebrow}>SZCZEGÓŁY</Text>
+        <Text style={styles.title}>
+          {cat.call_name ? cat.call_name : (cat.name || "Kot")}
+        </Text>
+        {cat.call_name && cat.name ? (
+          <Text style={styles.subtitle}>{cat.name}</Text>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        {cat.call_name ? (
+          <View style={styles.row}>
+            <Text style={styles.label}>Imię domowe</Text>
+            <Text style={styles.value}>{cat.call_name}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Nazwa hodowlana</Text>
+          <Text style={styles.value}>{cat.name || "brak danych"}</Text>
+        </View>
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Płeć</Text>
+          <View style={styles.sexWrap}>
+            <Text style={styles.sexSymbol}>{sexLabel.symbol}</Text>
+            <Text style={styles.sexText}>{sexLabel.text}</Text>
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Data urodzenia</Text>
+          <Text style={styles.value}>{formatDate(cat.birth_date)}</Text>
+        </View>
+
+        {!cat.is_external ? (
+          <View style={styles.row}>
+            <Text style={styles.label}>Status biologiczny</Text>
+            <View style={styles.badgeWrap}>
+              <StatusBadge value={biologicalStatus} />
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Status hodowlany</Text>
+          <View style={styles.badgeWrap}>
+            <StatusBadge value={breedingStatus} />
+          </View>
+        </View>
+
+        {!cat.is_external ? (
+          <View style={styles.row}>
+            <Text style={styles.label}>Status kota</Text>
+            <View style={styles.badgeWrap}>
+              <StatusBadge value={businessStatus} />
+            </View>
+          </View>
+        ) : null}
+
+        <View style={[styles.row, styles.rowTop]}>
+          <Text style={styles.label}>Rodowód</Text>
+
+          {cat.pedigree_number ? (
+            cat.fpl_pedigree_url ? (
+              <Pressable onPress={openPedigree}>
+                <Text style={styles.linkValue}>{cat.pedigree_number}</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.value}>{cat.pedigree_number}</Text>
+            )
+          ) : (
+            <Text style={styles.value}>brak danych</Text>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.futureCard}>
+        <Text style={styles.futureTitle}>Kupujący</Text>
+        <Text style={styles.futureText}>
+          Dane kupującego pojawią się tutaj automatycznie, gdy w bazie będą dostępne
+          rekordy sprzedaży i właściciela przypisane do tego kota.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#f7f4ee",
+  },
+  content: {
+    paddingBottom: 28,
+  },
+  header: {
+    paddingTop: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  eyebrow: {
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: "#8f8a80",
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1f1f1f",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#7b7469",
+    marginTop: 4,
+    fontWeight: "600",
+  },
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1f1f1f",
+  },
+  loadingWrap: {
+    flex: 1,
+    backgroundColor: "#f7f4ee",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: "#5b5b5b",
+    textAlign: "center",
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    padding: 18,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "#ece5d8",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1ece3",
+  },
+  rowTop: {
+    alignItems: "flex-start",
+  },
+  label: {
+    flex: 1,
+    fontSize: 14,
+    color: "#7b7469",
+    fontWeight: "700",
+  },
+  value: {
+    flex: 1,
+    fontSize: 15,
+    color: "#1f1f1f",
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  linkValue: {
+    fontSize: 15,
+    color: "#355070",
+    fontWeight: "800",
+    textAlign: "right",
+    textDecorationLine: "underline",
+  },
+  sexWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    flex: 1,
+  },
+  sexSymbol: {
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  sexText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1f1f1f",
+  },
+  badgeWrap: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  badge: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  badgeText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  futureCard: {
+    backgroundColor: "#f0ebe3",
+    borderRadius: 18,
+    padding: 16,
+    marginHorizontal: 20,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#e2dacb",
+  },
+  futureTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#2a2a2a",
+    marginBottom: 6,
+  },
+  futureText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#675f55",
+  },
+});

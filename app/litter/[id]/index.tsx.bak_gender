@@ -1,0 +1,234 @@
+import React, { useEffect, useState } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { supabase } from "../../../lib/supabase";
+
+export default function LitterScreen() {
+  const { id } = useLocalSearchParams();
+
+  const [litter, setLitter] = useState<any>(null);
+  const [kittens, setKittens] = useState<any[]>([]);
+  const [weights, setWeights] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const getFullName = (cat: any) => {
+    if (!cat) return "—";
+    const parts = [
+      cat.title_prefix,
+      cat.call_name,
+      cat.cattery_name,
+      cat.title_suffix,
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(" ");
+    return cat.name || "—";
+  };
+
+  const getSexLabel = (sex: string | null | undefined) => {
+    if (sex === "F") return "kotka";
+    if (sex === "M") return "kocurek";
+    return "—";
+  };
+
+  const getLitterLetter = (items: any[]) => {
+    const first = items.find((k) => (k.call_name || k.name));
+    if (!first) return "";
+    const base = (first.call_name || first.name || "").trim();
+    return base ? base.charAt(0).toUpperCase() : "";
+  };
+
+  const getBirthWeight = (kittenId: string) => {
+    const value = weights[kittenId];
+    if (value === null || value === undefined || value === "") return "—";
+    return value;
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+
+    const { data: litterData } = await supabase
+      .from("litters")
+      .select(`
+        *,
+        mother:mother_id(*),
+        father:father_id(*)
+      `)
+      .eq("id", id)
+      .single();
+
+    const { data: kittensData } = await supabase
+      .from("cats")
+      .select("*")
+      .eq("litter_id", id)
+      .order("kitten_number", { ascending: true });
+
+    const kittenIds = (kittensData || []).map((k: any) => k.id);
+
+    let weightMap: any = {};
+
+    if (kittenIds.length > 0) {
+      const { data: weightsData } = await supabase
+        .from("weights")
+        .select("*")
+        .in("cat_id", kittenIds);
+
+      for (const w of weightsData || []) {
+        const catId = w.cat_id;
+        if (!catId) continue;
+
+        if (weightMap[catId] === undefined || weightMap[catId] === null) {
+          const val =
+            w.birth_weight ??
+            w.weight_g ??
+            w.weight ??
+            w.grams ??
+            null;
+
+          weightMap[catId] = val;
+        }
+      }
+    }
+
+    setLitter(litterData || null);
+    setKittens(kittensData || []);
+    setWeights(weightMap);
+    setLoading(false);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.info}>Ładowanie...</Text>
+      </View>
+    );
+  }
+
+  if (!litter) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.info}>Nie znaleziono miotu</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.headerBox}>
+        <Text style={styles.title}>MIOT {getLitterLetter(kittens)}</Text>
+        <Text style={styles.date}>{litter.birth_date || "—"}</Text>
+        <Text style={styles.parent} numberOfLines={1} ellipsizeMode="tail">
+          matka: {getFullName(litter.mother)}
+        </Text>
+        <Text style={styles.parent} numberOfLines={1} ellipsizeMode="tail">
+          ojciec: {getFullName(litter.father)}
+        </Text>
+      </View>
+
+      {kittens.map((k) => (
+        <TouchableOpacity
+          key={k.id}
+          style={styles.card}
+          onPress={() => router.push(`/cat/${k.id}`)}
+        >
+          <View style={styles.topLine}>
+            <Text style={styles.sex}>{getSexLabel(k.sex)}</Text>
+            <Text style={styles.weight}>waga urodzeniowa: {getBirthWeight(k.id)} g</Text>
+          </View>
+
+          <Text
+            style={styles.name}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {getFullName(k)}
+          </Text>
+
+          <Text style={styles.meta}>nr w miocie: {k.kitten_number ?? "—"}</Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f4efe9",
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 30,
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4efe9",
+  },
+  info: {
+    fontSize: 16,
+    color: "#666",
+  },
+  headerBox: {
+    backgroundColor: "#fff7ef",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 18,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: "bold",
+    color: "#2d3142",
+    marginBottom: 6,
+  },
+  date: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 10,
+  },
+  parent: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#3f3a35",
+    marginBottom: 4,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  topLine: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  sex: {
+    fontSize: 13,
+    color: "#7a746f",
+    fontWeight: "600",
+  },
+  weight: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#222",
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  meta: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "600",
+  },
+});
