@@ -363,11 +363,12 @@ export default function CatDocumentsScreen() {
 
       if (insertError) {
         console.error("❌ Insert failed:", insertError);
+        throw new Error(`Insert failed: ${insertError.message}`);
+      }
 
       Alert.alert("Sukces", "Dokument został dodany.");
       resetModal();
       loadData();
-      }
     } catch (error: any) {
       console.error("❌ Full error:", error);
       Alert.alert("Błąd", error.message || "Nie udało się dodać dokumentu.");
@@ -379,10 +380,20 @@ export default function CatDocumentsScreen() {
   
   const deleteDocument = (docId: string, docType: string) => {
     Alert.alert(
-       
+      "Usuń dokument",
+      `Czy na pewno chcesz usunąć ten dokument (${docType})?`,
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Usuń",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { error } = await supabase
                 .from("cat_documents")
                 .delete()
                 .eq("id", docId);
+              if (error) throw error;
               loadData();
               Alert.alert("Sukces", "Dokument został usunięty.");
             } catch (error) {
